@@ -4,6 +4,7 @@ import asyncio
 import sys
 import datetime
 import logging
+import hashlib
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -151,7 +152,9 @@ async def main():
 			logger.info(f"Saved screenshot to {screenshots_folder}/amazon_logged_in.png")
 			
 			# Process invoices directly from the orders page
-			await download_invoices(context, page, amazon_folder, screenshots_folder, logger)
+			# Initialize an empty set to store file content hashes
+			content_hashes = set()
+			await download_invoices(context, page, amazon_folder, screenshots_folder, logger, None, content_hashes)
 			
 			logger.info("Invoice download process completed!")
 			logger.info("You can now interact with the page manually.")
@@ -168,13 +171,18 @@ async def main():
 			# Close the browser
 			await browser.close()
 
-async def download_invoices(context, page, amazon_folder, screenshots_folder, logger):
+async def download_invoices(context, page, amazon_folder, screenshots_folder, logger, processed_urls=None, content_hashes=None):
 	"""Download all available invoices from the orders page."""
 	
 	logger.info("Analyzing page structure to find invoices...")
 	
-	# Track URLs that have already been processed to avoid duplicates
-	processed_urls = set()
+	# Initialize URL tracking if not provided
+	if processed_urls is None:
+		processed_urls = set()
+	
+	# Initialize content hash tracking if not provided
+	if content_hashes is None:
+		content_hashes = set()
 	
 	# Wait for page to be fully loaded with increased timeout
 	try:
@@ -305,9 +313,21 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 					
 					# Ensure it's a PDF by checking the magic number
 					if pdf_bytes.startswith(b'%PDF'):
+						# Calculate MD5 hash of content to detect duplicates
+						content_hash = hashlib.md5(pdf_bytes).hexdigest()
+						
+						# Check if we've already downloaded this content
+						if content_hash in content_hashes:
+							logger.info(f"⏭️ Skipping duplicate content (hash: {content_hash})")
+							return False
+						
+						# Add hash to our set of seen content
+						content_hashes.add(content_hash)
+						
+						# Save the file
 						with open(filename, 'wb') as f:
 							f.write(pdf_bytes)
-						logger.info(f"✅ Successfully saved PDF to {filename}")
+						logger.info(f"✅ Successfully saved PDF to {filename} (hash: {content_hash})")
 						return True
 					else:
 						logger.warning(f"❌ Content doesn't appear to be a valid PDF for {filename}")
@@ -500,7 +520,7 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 			
 			# Close the popover when done
 			await page.keyboard.press("Escape")
-			await page.wait_for_timeout(1000)
+			await page.wait_for_timeout(2000)  # Increased delay between popovers to 2 seconds
 			
 		except Exception as e:
 			logger.error(f"Error processing popover {i+1}: {e}")
@@ -520,8 +540,8 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 			logger.warning("Timeout waiting for next page to load")
 			await page.screenshot(path=os.path.join(screenshots_folder, "next_page_timeout.png"))
 		
-		# Process the next page of orders recursively and pass the processed_urls set
-		await download_invoices(context, page, amazon_folder, screenshots_folder, logger)
+		# Process the next page of orders recursively and pass both sets
+		await download_invoices(context, page, amazon_folder, screenshots_folder, logger, processed_urls, content_hashes)
 
 if __name__ == '__main__':
 	# Run the main function
