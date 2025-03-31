@@ -2,15 +2,29 @@
 
 This script automates the downloading of invoices from Amazon's order history page. It navigates through your order history, identifies invoices, and downloads them as PDFs to a local folder.
 
-There are 2 files:
-- amazon-invoices.py
-- amazon-invoices-downloader.py
+## Overview
 
-In both I tried to scrape the invoices.
-The amazon-invoices-downloader.py does work but it is very slow due to Amazon most likely security or ui quirks
-amazon-invoices.py is very fast, can select which year to download etc. But it keeps downloading the first few invoices and the rest are copies
+This repository contains two scripts for downloading Amazon invoices:
+- `amazon-invoices-downloader.py` - The recommended script that works reliably, though slower
+- `amazon-invoices.py` - Unreliable first attempt that does not really work but has cool features I need to implement
 
-I am not sure if I can find loopholes. This whole script wouldn't be required if Amazon emailed us our invoices instead of marketing spam.
+The main script (`amazon-invoices-downloader.py`) now includes improvements such as:
+- Duplicate detection to avoid downloading the same invoice multiple times
+- Improved error handling and more comprehensive logging
+- A hash-based system to verify file content uniqueness
+
+
+## TODO List for amazon-invoice-downloader.py
+
+[] Organization by Month/Year: Creates a more structured folder organization system that sorts invoices into folders by month-year (MM-YYYY format)
+
+[] Order Details Extraction: improve comprehensive order details extraction (lines 155-283) to capture not just invoice links but also product titles and other order metadata.
+
+[] Fallback Mechanisms: Implements multiple fallback approaches for downloading PDFs when primary methods fail, including browser fetch API techniques
+
+[] Improve debugging
+
+[] Interactive Final Phase: Keeps the browser open for manual interaction after the automated process completes, allowing users to manually download any invoices that the automation missed.
 
 ## How It Works
 
@@ -29,6 +43,7 @@ I am not sure if I can find loopholes. This whole script wouldn't be required if
    - Identifies invoice links within "popover" elements (Amazon's interactive UI components)
    - Extracts order IDs for proper file naming
    - Filters out non-invoice items (like Prime Video orders)
+   - Skips "Request invoice" and "Order Summary" links
 
 4. **PDF Extraction Methods**:
    - Uses multiple strategies to handle different invoice presentation methods:
@@ -41,6 +56,7 @@ I am not sure if I can find loopholes. This whole script wouldn't be required if
    - Names files with order dates and IDs
    - Organizes downloads in an "Amazon" folder
    - Creates detailed logs with timestamps
+   - Avoids duplicates by checking file content hashes
 
 ## Anti-Scraping Measures and How We Bypass Them
 
@@ -82,20 +98,13 @@ The script includes robust error handling:
 - Popover HTML content saving for analysis
 - Multiple fallback methods if primary PDF extraction fails
 
-## Limitations
+## Duplicate Prevention
 
-- Requires manual password entry
-- May need adjustments as Amazon's site structure changes
-- Cannot run headlessly (browser must be visible)
-- May encounter temporary blocking if used excessively
-
-## Usage Tips
-
-1. Set the `AMAZON_EMAIL` environment variable before running
-2. Be prepared to enter your password manually
-3. Allow the script sufficient time to process orders
-4. Don't use excessively to avoid triggering Amazon's anti-automation measures
-5. Check the generated log file for detailed processing information
+The script now prevents downloading duplicate invoices by:
+- Tracking all processed URLs to avoid re-downloading the same link
+- Computing MD5 hashes of file content to detect duplicates even if URLs differ
+- Skipping downloads when content matches previously downloaded files
+- Providing a `find_duplicates.sh` script to check for duplicate files in the Amazon folder
 
 ## Installation and Setup
 
@@ -103,9 +112,23 @@ The script includes robust error handling:
 - Python 3.7 or higher
 - pip (Python package installer)
 
-### Setup Instructions
+### Automated Setup
 
-1. Clone this repository to your local machine:
+Use the included installation script:
+```bash
+./install.sh
+```
+
+This script will:
+1. Check your Python version
+2. Create a Python virtual environment
+3. Install required dependencies
+4. Install Playwright browsers
+5. Create a sample `.env` file from the template
+
+### Manual Setup
+
+1. Clone this repository to your local machine
 
 2. Create and activate a Python virtual environment:
 ```bash
@@ -131,16 +154,43 @@ Then edit the `.env` file to add your Amazon email.
 
 ### Running the Scripts
 
-To run the faster script (which does not work and has issues):
-```bash
-python amazon-invoices.py
-```
-
-To run the slower but more reliable script:
+To run the recommended script:
 ```bash
 python amazon-invoices-downloader.py
 ```
 
+To run the faster but less reliable script:
+```bash
+python amazon-invoices.py
+```
+
+### Checking for Duplicates
+
+After downloading invoices, you can check for duplicates:
+```bash
+./find_duplicates.sh
+```
+
+This will:
+- Generate MD5 hashes for all downloaded PDF files
+- Identify files with identical content
+- Provide a summary of unique and duplicate files
+
+## Limitations
+
+- Requires manual password entry
+- May need adjustments as Amazon's site structure changes
+- Cannot run headlessly (browser must be visible)
+- May encounter temporary blocking if used excessively
+
+## Usage Tips
+
+1. Set the `AMAZON_EMAIL` environment variable before running
+2. Be prepared to enter your password manually
+3. Allow the script sufficient time to process orders
+4. Don't use excessively to avoid triggering Amazon's anti-automation measures
+5. Check the generated log file for detailed processing information
+
 ## Legal Considerations
 
-This script is designed for personal use to download your own invoices. Using it for scraping other users' data or excessive automation may violate Amazon's Terms of Service. Use responsibly and ethically. 
+This script is designed for personal use to download your own invoices. Using it for scraping other users' data or excessive automation may violate Amazon's Terms of Service. Use responsibly and ethically.
