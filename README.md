@@ -97,6 +97,50 @@ The script includes robust error handling:
 4. Don't use excessively to avoid triggering Amazon's anti-automation measures
 5. Check the generated log file for detailed processing information
 
+## Installation and Setup
+
+### Prerequisites
+- Python 3.7 or higher
+- pip (Python package installer)
+
+### Setup Instructions
+
+1. Clone this repository to your local machine:
+
+2. Create and activate a Python virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install required dependencies:
+```bash
+pip install playwright python-dotenv
+```
+
+4. Install Playwright browsers:
+```bash
+playwright install
+```
+
+5. Create a `.env` file with your Amazon email (or copy from the sample):
+```bash
+cp env-sample .env
+```
+Then edit the `.env` file to add your Amazon email.
+
+### Running the Scripts
+
+To run the faster script (which does not work and has issues):
+```bash
+python amazon-invoices.py
+```
+
+To run the slower but more reliable script:
+```bash
+python amzon-invoices-downloader.py
+```
+
 ## Legal Considerations
 
 This script is designed for personal use to download your own invoices. Using it for scraping other users' data or excessive automation may violate Amazon's Terms of Service. Use responsibly and ethically. 
