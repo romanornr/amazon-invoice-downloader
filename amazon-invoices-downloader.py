@@ -173,6 +173,9 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 	
 	logger.info("Analyzing page structure to find invoices...")
 	
+	# Track URLs that have already been processed to avoid duplicates
+	processed_urls = set()
+	
 	# Wait for page to be fully loaded with increased timeout
 	try:
 		await page.wait_for_load_state("networkidle", timeout=30000)
@@ -323,6 +326,20 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 					logger.info(f"Processing PDF link {pdf_idx+1}: {link_text.strip()}")
 					logger.info(f"PDF URL: {pdf_url}")
 					
+					# Skip if this URL has already been processed
+					if pdf_url in processed_urls:
+						logger.info(f"Skipping already processed URL: {pdf_url}")
+						continue
+					
+					# Convert relative URLs to absolute URLs
+					if pdf_url and pdf_url.startswith('/'):
+						base_url = page.url.split('//', 1)[0] + '//' + page.url.split('//', 1)[1].split('/', 1)[0]
+						pdf_url = base_url + pdf_url
+						logger.info(f"Converted to absolute URL: {pdf_url}")
+					
+					# Add to processed URLs
+					processed_urls.add(pdf_url)
+					
 					# Try to get the order date from nearby elements
 					order_date = datetime.datetime.now().strftime("%m-%y")  # Default to current month-year
 					try:
@@ -395,16 +412,34 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 						# Try clicking the link, which may open in a new tab or in a popup
 						logger.info("Regular invoice link, trying various methods...")
 						
-						# First try: open in the same tab with Ctrl key to force new tab
-						async with context.expect_page(timeout=15000) as new_page_info:
-							await pdf_link.click(button="middle")  # Middle click to open in new tab
-						
-						invoice_page = await new_page_info.value
-						logger.info(f"Opened invoice in new tab: {invoice_page.url}")
-						
+						# For links that might be problematic with middle-click, try different approach
 						try:
+							# First, try to get the href and navigate directly if it's an absolute URL
+							if pdf_url and (pdf_url.startswith('http') or pdf_url.startswith('https')):
+								new_page = await context.new_page()
+								await new_page.goto(pdf_url, timeout=30000)
+								logger.info(f"Directly navigated to URL: {pdf_url}")
+								invoice_page = new_page
+							else:
+								# For other links, try middle-click with a shorter timeout
+								async with context.expect_page(timeout=15000) as new_page_info:
+									try:
+										await pdf_link.click(button="middle", timeout=10000)
+									except PlaywrightTimeoutError:
+										logger.warning("Middle click timed out, trying regular click")
+										# Fall back to regular click if middle click fails
+										await pdf_link.click(timeout=10000)
+								
+								invoice_page = await new_page_info.value
+							
+							logger.info(f"Opened invoice in new tab: {invoice_page.url}")
+							
 							# Wait for the page to load
-							await invoice_page.wait_for_load_state("networkidle", timeout=30000)
+							try:
+								await invoice_page.wait_for_load_state("networkidle", timeout=30000)
+							except PlaywrightTimeoutError:
+								logger.warning("Timeout while waiting for invoice page to load, continuing anyway")
+								
 							await invoice_page.screenshot(path=os.path.join(screenshots_folder, f"invoice_page_{order_id}_{pdf_idx}.png"))
 							
 							# Check if this appears to be a PDF page
@@ -443,12 +478,22 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 										total_invoices_downloaded += 1
 									else:
 										logger.warning("❌ Failed to save PDF from this page")
-							
+						
 						except Exception as e:
 							logger.error(f"Error processing invoice page: {e}")
+							# Take a screenshot if possible to debug
+							try:
+								await page.screenshot(path=os.path.join(screenshots_folder, f"error_invoice_{order_id}_{pdf_idx}.png"))
+								logger.info(f"Saved error screenshot to {screenshots_folder}/error_invoice_{order_id}_{pdf_idx}.png")
+							except Exception:
+								pass
 						finally:
-							# Close the invoice page
-							await invoice_page.close()
+							# Close the invoice page if it exists
+							try:
+								if 'invoice_page' in locals():
+									await invoice_page.close()
+							except Exception:
+								pass
 				
 				except Exception as e:
 					logger.error(f"Error processing PDF link {pdf_idx+1}: {e}")
@@ -462,7 +507,7 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 	
 	logger.info(f"Total invoices processed on this page: {total_invoices_downloaded}")
 	
-	# Check if there are more pages of orders
+	# Recursively process next pages if available
 	next_button = await page.query_selector("li.a-last > a")
 	if next_button:
 		logger.info("Found more pages of orders. Navigating to next page...")
@@ -475,7 +520,7 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 			logger.warning("Timeout waiting for next page to load")
 			await page.screenshot(path=os.path.join(screenshots_folder, "next_page_timeout.png"))
 		
-		# Process the next page of orders recursively
+		# Process the next page of orders recursively and pass the processed_urls set
 		await download_invoices(context, page, amazon_folder, screenshots_folder, logger)
 
 if __name__ == '__main__':
