@@ -270,6 +270,19 @@ async def download_invoices(context, page, amazon_folder, screenshots_folder, lo
 				pdf_links = await page.query_selector_all(".a-popover-content a:has-text('Invoice'), .a-popover-content a:has-text('Credit note')")
 				logger.info(f"Found {len(pdf_links)} potential invoice links in popover")
 			
+			# Filter out any "Request invoice" links - we only want actual invoice downloads
+			filtered_pdf_links = []
+			for link in pdf_links:
+				link_text = await link.text_content()
+				if "request invoice" in link_text.lower():
+					logger.info(f"Skipping 'Request invoice' link: {link_text.strip()}")
+					continue
+				filtered_pdf_links.append(link)
+			
+			if len(filtered_pdf_links) < len(pdf_links):
+				logger.info(f"Filtered out {len(pdf_links) - len(filtered_pdf_links)} 'Request invoice' links")
+				pdf_links = filtered_pdf_links
+			
 			# Function to handle saving PDFs directly from the browser
 			async def save_pdf_from_page(browser_page, filename):
 				try:
