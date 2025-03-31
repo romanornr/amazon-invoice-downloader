@@ -138,7 +138,7 @@ python amazon-invoices.py
 
 To run the slower but more reliable script:
 ```bash
-python amzon-invoices-downloader.py
+python amazon-invoices-downloader.py
 ```
 
 ## Legal Considerations
